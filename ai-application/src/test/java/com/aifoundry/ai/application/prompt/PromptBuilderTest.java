@@ -10,7 +10,7 @@ class PromptBuilderTest {
   void rendersRequiredVariables() {
     var t = new PromptModels.Template("x", "x", "1", "Hello {{name}}", Set.of("name"), Map.of());
     var r =
-        new PromptBuilder()
+        builder()
             .build(
                 t, new PromptModels.Context(Map.of("name", "Ada"), List.of(), List.of(), Map.of()));
     assertEquals("Hello Ada", r.content());
@@ -22,7 +22,10 @@ class PromptBuilderTest {
     assertThrows(
         RuntimeException.class,
         () ->
-            new PromptBuilder()
-                .build(t, new PromptModels.Context(Map.of(), List.of(), List.of(), Map.of())));
+            builder().build(t, new PromptModels.Context(Map.of(), List.of(), List.of(), Map.of())));
+  }
+
+  private PromptBuilder builder() {
+    return new PromptBuilder(new PromptRenderer(), new PromptValidator(1_000));
   }
 }

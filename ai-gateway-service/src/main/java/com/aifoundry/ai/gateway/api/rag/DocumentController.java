@@ -91,12 +91,7 @@ public class DocumentController {
         x.chunks().stream()
             .map(
                 c ->
-                    new ChunkDto(
-                        c.chunk().chunkId(),
-                        c.chunk().documentId().value(),
-                        c.chunk().content(),
-                        c.score(),
-                        c.chunk().metadata()))
+                    new ChunkDto(c.chunkId(), c.documentId(), c.content(), c.score(), c.metadata()))
             .toList(),
         x.duration().toMillis());
   }

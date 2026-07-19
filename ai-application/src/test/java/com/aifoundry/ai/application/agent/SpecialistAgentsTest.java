@@ -2,6 +2,8 @@ package com.aifoundry.ai.application.agent;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.aifoundry.ai.application.prompt.PromptService;
+import com.aifoundry.ai.application.tool.*;
 import com.aifoundry.ai.domain.agent.AgentModels.*;
 import com.aifoundry.ai.domain.chat.*;
 import com.aifoundry.ai.provider.spi.*;
@@ -35,19 +37,31 @@ class SpecialistAgentsTest {
         }
       };
 
+  private final PromptService prompts =
+      request ->
+          new ChatRequest(
+              request.conversationId(),
+              request.model(),
+              List.of(new ChatMessage(ChatRole.USER, request.question(), Map.of())),
+              request.options(),
+              request.metadata());
+
+  private final ToolExecutionService tools =
+      new ToolExecutionService(new DefaultToolRegistry(), new InMemoryApprovalService());
+
   @Test
   void allSpecialistsComplete() {
-    List<AgentServices.Agent> agents =
+    List<Agent> agents =
         List.of(
-            new BankingAgents.GeneralBankingAgent(provider),
-            new BankingAgents.FraudAgent(provider),
-            new BankingAgents.LoanAgent(provider),
-            new BankingAgents.CreditCardAgent(provider),
-            new BankingAgents.AccountAgent(provider),
-            new BankingAgents.KnowledgeAgent(provider));
+            new BankingAgents.GeneralBankingAgent(prompts, tools, provider),
+            new BankingAgents.FraudAgent(prompts, tools, provider),
+            new BankingAgents.LoanAgent(prompts, tools, provider),
+            new BankingAgents.CreditCardAgent(prompts, tools, provider),
+            new BankingAgents.AccountAgent(prompts, tools, provider),
+            new BankingAgents.KnowledgeAgent(prompts, tools, provider));
     for (var a : agents)
       assertEquals(
           ExecutionStatus.COMPLETED,
-          a.execute(new Request("e", "c", "u", "help", Map.of())).status());
+          a.execute(new AgentRequest("e", "c", "u", "help", Map.of())).status());
   }
 }

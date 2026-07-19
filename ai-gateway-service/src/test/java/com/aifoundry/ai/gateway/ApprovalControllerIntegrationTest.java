@@ -2,7 +2,7 @@ package com.aifoundry.ai.gateway;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.aifoundry.ai.application.tool.ToolServices.*;
+import com.aifoundry.ai.application.tool.ApprovalService;
 import java.time.*;
 import java.util.*;
 import org.junit.jupiter.api.*;
@@ -23,7 +23,7 @@ class ApprovalControllerIntegrationTest {
   @Test
   void approvesPendingAction() {
     approvals.request(
-        new ApprovalRequest(
+        new ApprovalService.Request(
             "integration-approval",
             "u",
             "freeze-card",

@@ -15,7 +15,7 @@ class TokenAwareDocumentChunkerTest {
     var d =
         new KnowledgeDocument(
             new DocumentId("doc"), "T", text, "s", "text/plain", Map.of(), Instant.now());
-    var c = new RagServices.TokenAwareDocumentChunker(45, 5, 10).chunk(d);
+    var c = new TokenAwareDocumentChunker(45, 5, 10).chunk(d);
     assertTrue(c.size() > 1);
     assertEquals("doc-0", c.getFirst().chunkId());
     assertTrue(c.stream().allMatch(x -> x.endOffset() > x.startOffset()));

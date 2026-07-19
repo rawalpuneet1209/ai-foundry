@@ -202,17 +202,23 @@ Because state is currently in-memory, documents, vectors, approvals, and convers
 flowchart LR
     Request --> Validate
     Validate --> LoadHistory[Load bounded history]
-    LoadHistory --> SaveUser[Store user message]
-    SaveUser --> Provider[ChatProvider]
+    LoadHistory --> Prompt[PromptService]
+    Prompt -->|useRag=true| Retrieval[Rewrite + embed + search]
+    Retrieval --> Context[RagContextBuilder]
+    Context --> Provider[ChatProvider]
+    Prompt -->|useRag=false| Provider
     Provider --> SpringAI
     SpringAI --> Ollama
     Ollama --> SaveAssistant[Store assistant response]
     SaveAssistant --> Response
 ```
 
-The synchronous path stores both user and assistant messages. The streaming path stores the user message and emits SSE chunks, but does not yet assemble and store the streamed assistant response.
+Both synchronous and streaming paths store user and assistant messages. The streaming path
+assembles SSE deltas and persists the completed assistant response when the publisher finishes.
 
-The chat request includes `useRag`; automatic retrieval is not wired into `DefaultChatService`. Consumers that need retrieval must call the search endpoint and supply/use the returned context separately.
+The chat request includes `useRag`. `DefaultChatService` delegates all prompt creation to
+`PromptService`; enabled RAG performs rewrite, embedding, vector search, bounded context
+construction, and resource-template rendering before invoking the provider.
 
 ### RAG ingestion workflow
 
@@ -257,7 +263,10 @@ flowchart LR
     Provider --> AgentResponse[Agent response and routing metadata]
 ```
 
-Agents create specialist safety prompts and call the chat provider. They do not currently infer or invoke tools automatically. Tool execution is a separate API workflow.
+`AgentSupervisor` classifies the intent and selects one specialist. Specialists use resource-backed
+prompts, optional retrieval, and `ToolExecutionService`. If a protected tool is requested, the
+workflow returns `APPROVAL_REQUIRED` before provider invocation and resumes only with an approved
+decision.
 
 ### Tool and approval workflow
 
@@ -425,17 +434,16 @@ The main supported extension points are:
 - replace the no-op query rewriter with an LLM or rules implementation;
 - add an MCP gateway without changing domain types;
 - register new agents and tools through application configuration;
-- connect agent planning to `ToolServices.Executor` while preserving allow lists and approvals;
-- wire `RetrievalService` and `RagContextBuilder` into chat and specialist-agent prompt construction;
+- extend agent planning through `ToolExecutionService` while preserving allow lists and approvals;
 - externalize prompt templates to a database or configuration service.
 
 ## 13. Architectural limitations
 
 - In-memory state is not durable or shared across replicas.
-- Chat `useRag` does not automatically execute retrieval.
-- Specialist agents do not automatically invoke tools.
-- The knowledge agent is registered but not selected by the current keyword classifier.
-- Streaming responses are not saved back into conversation memory.
+- Retrieval uses process-local vectors and a pass-through query rewriter by default.
+- Specialist agents invoke only explicitly requested tools; autonomous planning is not implemented.
+- Intent classification uses deterministic keyword rules.
+- Streaming assistant responses are persisted only after the publisher completes successfully.
 - Tool outputs and banking actions are simulations only.
 - The caller-provided `allowedTools` field is an application guard, not a replacement for server-derived authorization in a public production API.
 

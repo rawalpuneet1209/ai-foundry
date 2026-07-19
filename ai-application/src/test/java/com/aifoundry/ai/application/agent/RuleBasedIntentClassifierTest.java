@@ -7,8 +7,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class RuleBasedIntentClassifierTest {
-  private final AgentServices.RuleBasedIntentClassifier c =
-      new AgentServices.RuleBasedIntentClassifier();
+  private final RuleBasedIntentClassifier c = new RuleBasedIntentClassifier();
 
   @Test
   void routesFraud() {

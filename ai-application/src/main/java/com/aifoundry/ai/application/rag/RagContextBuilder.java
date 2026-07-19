@@ -1,6 +1,5 @@
 package com.aifoundry.ai.application.rag;
 
-import com.aifoundry.ai.domain.rag.RagModels.*;
 import java.util.*;
 
 public final class RagContextBuilder {
@@ -13,15 +12,14 @@ public final class RagContextBuilder {
   public List<String> build(RetrievalResult r) {
     List<String> out = new ArrayList<>();
     int used = 0;
-    for (RetrievedChunk item : r.chunks()) {
-      var c = item.chunk();
+    for (Chunk chunk : r.chunks()) {
       String s =
           "[source="
-              + c.metadata().getOrDefault("source", "unknown")
+              + chunk.metadata().getOrDefault("source", "unknown")
               + ", chunk="
-              + c.chunkId()
+              + chunk.chunkId()
               + "]\n"
-              + c.content();
+              + chunk.content();
       if (used + s.length() > max) break;
       out.add(s);
       used += s.length();

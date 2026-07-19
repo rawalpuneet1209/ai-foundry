@@ -73,6 +73,11 @@ Validate YAML syntax, formatting, Compose configuration, and both Kubernetes ove
 ./scripts/lint-yaml.sh
 ```
 
+`mvn clean verify` also generates JaCoCo reports for source-bearing modules and enforces
+at least 90% line coverage across the corrected prompt, chunking, and approval core.
+GitHub Actions runs the same formatting, YAML, test, and coverage checks for pushes and
+pull requests.
+
 The API runs at `http://localhost:8080`; health is at `/actuator/health`. To run the container stack:
 
 ```bash

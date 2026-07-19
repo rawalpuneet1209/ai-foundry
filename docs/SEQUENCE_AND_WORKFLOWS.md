@@ -27,6 +27,8 @@ sequenceDiagram
     participant Chat as DefaultChatService
     participant Validator as ChatCommandValidator
     participant Memory as InMemoryConversationMemory
+    participant Prompt as PromptService
+    participant RAG as RetrievalService
     participant Provider as SpringAiChatProvider
     participant Ollama
 
@@ -36,6 +38,12 @@ sequenceDiagram
     Validator-->>Chat: valid
     Chat->>Memory: load conversation history
     Memory-->>Chat: bounded message list
+    Chat->>Prompt: build request
+    opt useRag=true
+        Prompt->>RAG: rewrite, embed, and search
+        RAG-->>Prompt: ranked chunks
+    end
+    Prompt-->>Chat: validated ChatRequest
     Chat->>Memory: append user message
     Chat->>Provider: chat(ChatRequest)
     Provider->>Ollama: Spring AI chat request
@@ -52,7 +60,10 @@ Behavior:
 - Memory retains at most 30 messages by default and evicts the oldest messages.
 - Temperature must be between 0 and 2, `topP` between 0 and 1, and `maxTokens` positive.
 - `X-Correlation-Id` is accepted or generated and returned in the response.
-- The `useRag` request field is accepted, but chat does not currently call `RetrievalService`; use the knowledge-search endpoint explicitly before chat if retrieved context is required.
+- When chat `useRag=true`, `PromptService` rewrites the query, creates an embedding, searches the
+  vector store, builds bounded context, and renders `rag-banking.txt`. RAG-enabled specialists
+  retain their own resource prompt and inject the same bounded context. When false, all retrieval
+  work is skipped.
 
 ## 2. Streaming chat
 
@@ -61,12 +72,14 @@ sequenceDiagram
     actor Client
     participant API as ChatController
     participant Chat as DefaultChatService
+    participant Prompt as PromptService
     participant Provider as SpringAiChatProvider
     participant Ollama
 
     Client->>API: POST /api/v1/chat/stream
     API->>Chat: stream(ChatCommand)
-    Chat->>Provider: stream(ChatRequest)
+    Chat->>Prompt: build final ChatRequest
+    Prompt->>Provider: stream(ChatRequest)
     Provider->>Ollama: streaming prompt
     loop Model tokens/chunks
         Ollama-->>Provider: content delta
@@ -76,7 +89,8 @@ sequenceDiagram
     Provider-->>Client: completed=true, finishReason=STOP
 ```
 
-The user message is stored before streaming. Streamed assistant content is not currently assembled and appended to conversation memory.
+The user message is stored before streaming. The application assembles response deltas and
+appends the completed assistant response to conversation memory when the stream completes.
 
 ## 3. Knowledge ingestion
 

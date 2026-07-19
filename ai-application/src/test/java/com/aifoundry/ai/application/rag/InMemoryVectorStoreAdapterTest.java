@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 class InMemoryVectorStoreAdapterTest {
   @Test
   void ordersByCosineSimilarity() {
-    var s = new RagServices.InMemoryVectorStore();
+    var s = new InMemoryVectorStore();
     var id = new DocumentId("d");
     s.upsert(
         List.of(

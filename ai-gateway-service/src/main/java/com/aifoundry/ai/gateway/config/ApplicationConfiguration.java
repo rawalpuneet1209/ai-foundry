@@ -1,14 +1,45 @@
 package com.aifoundry.ai.gateway.config;
 
-import com.aifoundry.ai.application.agent.*;
-import com.aifoundry.ai.application.chat.*;
-import com.aifoundry.ai.application.mcp.*;
-import com.aifoundry.ai.application.memory.*;
-import com.aifoundry.ai.application.rag.*;
-import com.aifoundry.ai.application.tool.*;
-import com.aifoundry.ai.provider.spi.*;
+import com.aifoundry.ai.application.agent.AgentRegistry;
+import com.aifoundry.ai.application.agent.AgentSupervisor;
+import com.aifoundry.ai.application.agent.BankingAgents;
+import com.aifoundry.ai.application.agent.DefaultAgentRegistry;
+import com.aifoundry.ai.application.agent.IntentClassifier;
+import com.aifoundry.ai.application.agent.RuleBasedIntentClassifier;
+import com.aifoundry.ai.application.chat.ChatCommandValidator;
+import com.aifoundry.ai.application.chat.DefaultChatService;
+import com.aifoundry.ai.application.mcp.McpToolGateway;
+import com.aifoundry.ai.application.mcp.NoOpMcpToolGateway;
+import com.aifoundry.ai.application.memory.ConversationMemoryPort;
+import com.aifoundry.ai.application.memory.ConversationMemoryService;
+import com.aifoundry.ai.application.memory.InMemoryConversationMemoryAdapter;
+import com.aifoundry.ai.application.prompt.DefaultPromptService;
+import com.aifoundry.ai.application.prompt.PromptBuilder;
+import com.aifoundry.ai.application.prompt.PromptRenderer;
+import com.aifoundry.ai.application.prompt.PromptService;
+import com.aifoundry.ai.application.prompt.PromptTemplateRepository;
+import com.aifoundry.ai.application.prompt.PromptValidator;
+import com.aifoundry.ai.application.rag.DocumentChunker;
+import com.aifoundry.ai.application.rag.DocumentIngestionService;
+import com.aifoundry.ai.application.rag.DocumentRepositoryPort;
+import com.aifoundry.ai.application.rag.InMemoryDocumentRepositoryAdapter;
+import com.aifoundry.ai.application.rag.InMemoryVectorStore;
+import com.aifoundry.ai.application.rag.RagContextBuilder;
+import com.aifoundry.ai.application.rag.RetrievalService;
+import com.aifoundry.ai.application.rag.TokenAwareDocumentChunker;
+import com.aifoundry.ai.application.rag.VectorStore;
+import com.aifoundry.ai.application.tool.ApprovalService;
+import com.aifoundry.ai.application.tool.BankingTools;
+import com.aifoundry.ai.application.tool.DefaultToolRegistry;
+import com.aifoundry.ai.application.tool.InMemoryApprovalService;
+import com.aifoundry.ai.application.tool.ToolExecutionService;
+import com.aifoundry.ai.application.tool.ToolRegistry;
+import com.aifoundry.ai.gateway.adapter.prompt.SpringPromptTemplateRepository;
+import com.aifoundry.ai.provider.spi.ChatProvider;
+import com.aifoundry.ai.provider.spi.EmbeddingProvider;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.*;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class ApplicationConfiguration {
@@ -20,9 +51,9 @@ public class ApplicationConfiguration {
 
   @Bean
   ConversationMemoryService memoryService(
-      ConversationMemoryPort p,
+      ConversationMemoryPort port,
       @Value("${ai.foundry.memory.max-messages-per-conversation:30}") int max) {
-    return new ConversationMemoryService(p, max);
+    return new ConversationMemoryService(port, max);
   }
 
   @Bean
@@ -32,8 +63,11 @@ public class ApplicationConfiguration {
 
   @Bean
   DefaultChatService chatService(
-      ChatProvider p, ConversationMemoryService m, ChatCommandValidator v) {
-    return new DefaultChatService(p, m, v);
+      ChatProvider provider,
+      ConversationMemoryService memory,
+      ChatCommandValidator validator,
+      PromptService prompts) {
+    return new DefaultChatService(provider, memory, validator, prompts);
   }
 
   @Bean
@@ -42,16 +76,16 @@ public class ApplicationConfiguration {
   }
 
   @Bean
-  RagServices.DocumentChunker chunker(
+  DocumentChunker chunker(
       @Value("${ai.foundry.rag.chunk-size:1000}") int size,
       @Value("${ai.foundry.rag.chunk-overlap:150}") int overlap,
-      @Value("${ai.foundry.rag.minimum-chunk-length:100}") int min) {
-    return new RagServices.TokenAwareDocumentChunker(size, overlap, min);
+      @Value("${ai.foundry.rag.minimum-chunk-length:100}") int minimumLength) {
+    return new TokenAwareDocumentChunker(size, overlap, minimumLength);
   }
 
   @Bean
-  RagServices.VectorStore vectorStore() {
-    return new RagServices.InMemoryVectorStore();
+  VectorStore vectorStore() {
+    return new InMemoryVectorStore();
   }
 
   @Bean
@@ -61,17 +95,17 @@ public class ApplicationConfiguration {
 
   @Bean
   RetrievalService retrievalService(
-      EmbeddingProvider e, RagServices.VectorStore v, RetrievalService.QueryRewriter r) {
-    return new RetrievalService(e, v, r);
+      EmbeddingProvider embeddings, VectorStore vectors, RetrievalService.QueryRewriter rewriter) {
+    return new RetrievalService(embeddings, vectors, rewriter);
   }
 
   @Bean
   DocumentIngestionService ingestionService(
-      DocumentRepositoryPort d,
-      RagServices.DocumentChunker c,
-      EmbeddingProvider e,
-      RagServices.VectorStore v) {
-    return new DocumentIngestionService(d, c, e, v);
+      DocumentRepositoryPort documents,
+      DocumentChunker chunker,
+      EmbeddingProvider embeddings,
+      VectorStore vectors) {
+    return new DocumentIngestionService(documents, chunker, embeddings, vectors);
   }
 
   @Bean
@@ -81,25 +115,54 @@ public class ApplicationConfiguration {
   }
 
   @Bean
-  ToolServices.ApprovalService approvals() {
-    return new ToolServices.ApprovalService();
+  PromptTemplateRepository promptTemplates() {
+    return new SpringPromptTemplateRepository();
   }
 
   @Bean
-  ToolServices.Registry tools() {
-    var r = new ToolServices.Registry();
-    r.register(new BankingTools.TransactionLookupTool());
-    r.register(new BankingTools.AccountSummaryTool());
-    r.register(new BankingTools.CardDetailsTool());
-    r.register(new BankingTools.FreezeCardTool());
-    r.register(new BankingTools.CardReplacementRequestTool());
-    r.register(new BankingTools.LoanEligibilityCheckTool());
-    return r;
+  PromptRenderer promptRenderer() {
+    return new PromptRenderer();
   }
 
   @Bean
-  ToolServices.Executor toolExecutor(ToolServices.Registry r, ToolServices.ApprovalService a) {
-    return new ToolServices.Executor(r, a);
+  PromptValidator promptValidator(@Value("${ai.foundry.prompt.max-characters:50000}") int max) {
+    return new PromptValidator(max);
+  }
+
+  @Bean
+  PromptBuilder promptBuilder(PromptRenderer renderer, PromptValidator validator) {
+    return new PromptBuilder(renderer, validator);
+  }
+
+  @Bean
+  PromptService promptService(
+      PromptTemplateRepository templates,
+      PromptBuilder builder,
+      RetrievalService retrieval,
+      RagContextBuilder contextBuilder) {
+    return new DefaultPromptService(templates, builder, retrieval, contextBuilder);
+  }
+
+  @Bean
+  ApprovalService approvals() {
+    return new InMemoryApprovalService();
+  }
+
+  @Bean
+  ToolRegistry tools() {
+    DefaultToolRegistry registry = new DefaultToolRegistry();
+    registry.register(new BankingTools.TransactionLookupTool());
+    registry.register(new BankingTools.AccountSummaryTool());
+    registry.register(new BankingTools.CardDetailsTool());
+    registry.register(new BankingTools.FreezeCardTool());
+    registry.register(new BankingTools.CardReplacementRequestTool());
+    registry.register(new BankingTools.LoanEligibilityCheckTool());
+    return registry;
+  }
+
+  @Bean
+  ToolExecutionService toolExecutor(ToolRegistry tools, ApprovalService approvals) {
+    return new ToolExecutionService(tools, approvals);
   }
 
   @Bean
@@ -108,24 +171,24 @@ public class ApplicationConfiguration {
   }
 
   @Bean
-  AgentServices.Registry agents(ChatProvider p) {
-    var r = new AgentServices.Registry();
-    r.register(new BankingAgents.GeneralBankingAgent(p));
-    r.register(new BankingAgents.FraudAgent(p));
-    r.register(new BankingAgents.LoanAgent(p));
-    r.register(new BankingAgents.CreditCardAgent(p));
-    r.register(new BankingAgents.AccountAgent(p));
-    r.register(new BankingAgents.KnowledgeAgent(p));
-    return r;
+  AgentRegistry agents(PromptService prompts, ToolExecutionService tools, ChatProvider chat) {
+    DefaultAgentRegistry registry = new DefaultAgentRegistry();
+    registry.register(new BankingAgents.GeneralBankingAgent(prompts, tools, chat));
+    registry.register(new BankingAgents.FraudAgent(prompts, tools, chat));
+    registry.register(new BankingAgents.LoanAgent(prompts, tools, chat));
+    registry.register(new BankingAgents.CreditCardAgent(prompts, tools, chat));
+    registry.register(new BankingAgents.AccountAgent(prompts, tools, chat));
+    registry.register(new BankingAgents.KnowledgeAgent(prompts, tools, chat));
+    return registry;
   }
 
   @Bean
-  AgentServices.IntentClassifier intentClassifier() {
-    return new AgentServices.RuleBasedIntentClassifier();
+  IntentClassifier intentClassifier() {
+    return new RuleBasedIntentClassifier();
   }
 
   @Bean
-  BankingAgents.Supervisor supervisor(AgentServices.IntentClassifier c, AgentServices.Registry r) {
-    return new BankingAgents.Supervisor(c, r);
+  AgentSupervisor supervisor(IntentClassifier classifier, AgentRegistry agents) {
+    return new AgentSupervisor(classifier, agents);
   }
 }

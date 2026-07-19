@@ -26,8 +26,6 @@ public final class PromptValidator {
     for (String v : t.requiredVariables())
       if (!v.equals("context") && !v.equals("conversation") && !c.variables().containsKey(v))
         throw new ValidationException("Missing prompt variable: " + v);
-    if (t.requiredVariables().contains("context") && c.retrievedContext().isEmpty())
-      throw new ValidationException("RAG context is required");
   }
 
   public void validateRendered(PromptModels.Rendered r) {

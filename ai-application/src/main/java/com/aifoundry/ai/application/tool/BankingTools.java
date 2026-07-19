@@ -1,6 +1,5 @@
 package com.aifoundry.ai.application.tool;
 
-import com.aifoundry.ai.application.tool.ToolServices.*;
 import java.math.*;
 import java.time.*;
 import java.util.*;
@@ -8,7 +7,7 @@ import java.util.*;
 public final class BankingTools {
   private BankingTools() {}
 
-  private static String required(Request r, String key) {
+  private static String required(ToolRequest r, String key) {
     Object v = r.arguments().get(key);
     if (v == null || v.toString().isBlank())
       throw new IllegalArgumentException(key + " is required");
@@ -22,18 +21,18 @@ public final class BankingTools {
   }
 
   private abstract static class Base implements Tool {
-    private final Definition d;
+    private final ToolDefinition definition;
 
     Base(String n, String desc, boolean approval) {
-      d = new Definition(n, desc, Map.of("type", "object"), approval);
+      definition = new ToolDefinition(n, desc, Map.of("type", "object"), approval);
     }
 
-    public Definition definition() {
-      return d;
+    public ToolDefinition definition() {
+      return definition;
     }
 
-    Result success(Request r, Map<String, Object> out) {
-      return new Result(r.requestId(), r.toolName(), true, out, null);
+    ToolResult success(ToolRequest r, Map<String, Object> out) {
+      return new ToolResult(r.requestId(), r.toolName(), ToolResult.Status.COMPLETED, out, null);
     }
   }
 
@@ -42,7 +41,7 @@ public final class BankingTools {
       super("transaction-lookup", "Look up simulated transactions", false);
     }
 
-    public Result execute(Request r) {
+    public ToolResult execute(ToolRequest r) {
       String id = mask(required(r, "accountId"));
       return success(
           r,
@@ -70,7 +69,7 @@ public final class BankingTools {
       super("account-summary", "Return a simulated account summary", false);
     }
 
-    public Result execute(Request r) {
+    public ToolResult execute(ToolRequest r) {
       return success(
           r,
           Map.of(
@@ -92,7 +91,7 @@ public final class BankingTools {
       super("card-details", "Return simulated card details", false);
     }
 
-    public Result execute(Request r) {
+    public ToolResult execute(ToolRequest r) {
       return success(
           r,
           Map.of(
@@ -116,7 +115,7 @@ public final class BankingTools {
       super("freeze-card", "Freeze a simulated card", true);
     }
 
-    public Result execute(Request r) {
+    public ToolResult execute(ToolRequest r) {
       return success(
           r,
           Map.of(
@@ -134,7 +133,7 @@ public final class BankingTools {
       super("card-replacement-request", "Create a simulated replacement request", true);
     }
 
-    public Result execute(Request r) {
+    public ToolResult execute(ToolRequest r) {
       return success(
           r,
           Map.of(
@@ -152,7 +151,7 @@ public final class BankingTools {
       super("loan-eligibility-check", "Calculate illustrative loan eligibility", false);
     }
 
-    public Result execute(Request r) {
+    public ToolResult execute(ToolRequest r) {
       BigDecimal income = new BigDecimal(required(r, "monthlyIncome")),
           debt = new BigDecimal(required(r, "monthlyDebt")),
           requested = new BigDecimal(required(r, "requestedAmount"));

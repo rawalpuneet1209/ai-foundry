@@ -27,7 +27,7 @@ class RetrievalServiceTest {
             return Set.of("m");
           }
         };
-    var store = new RagServices.InMemoryVectorStore();
+    var store = new InMemoryVectorStore();
     var id = new DocumentId("d");
     store.upsert(
         List.of(

@@ -12,24 +12,29 @@ import reactor.core.publisher.Flux;
 public final class SpringAiChatProvider implements ChatProvider {
   private final ChatClient client;
   private final SpringAiProviderProperties props;
+  private final SpringAiMessageMapper messages;
+  private final SpringAiResponseMapper responses;
 
   public SpringAiChatProvider(ChatClient.Builder b, SpringAiProviderProperties p) {
-    client = b.build();
-    props = p;
+    this(b, p, new SpringAiMessageMapper(), new SpringAiResponseMapper());
+  }
+
+  public SpringAiChatProvider(
+      ChatClient.Builder builder,
+      SpringAiProviderProperties properties,
+      SpringAiMessageMapper messages,
+      SpringAiResponseMapper responses) {
+    client = builder.build();
+    props = properties;
+    this.messages = messages;
+    this.responses = responses;
   }
 
   public ChatResponse chat(ChatRequest r) {
     String model = r.model() == null ? props.defaultChatModel() : r.model();
     try {
-      String content = client.prompt().system(system(r)).user(user(r)).call().content();
-      return new ChatResponse(
-          UUID.randomUUID().toString(),
-          r.conversationId(),
-          model,
-          content,
-          TokenUsage.unknown(),
-          FinishReason.STOP,
-          Map.of("provider", props.name()));
+      var response = client.prompt().messages(messages.map(r.messages())).call().chatResponse();
+      return responses.map(response, r.conversationId(), model, props.name());
     } catch (Exception e) {
       throw ProviderException.unavailable(props.name(), model, e);
     }
@@ -39,7 +44,7 @@ public final class SpringAiChatProvider implements ChatProvider {
     String id = UUID.randomUUID().toString(),
         model = r.model() == null ? props.defaultChatModel() : r.model();
     try {
-      return client.prompt().system(system(r)).user(user(r)).stream()
+      return client.prompt().messages(messages.map(r.messages())).stream()
           .content()
           .map(
               s ->
@@ -63,20 +68,6 @@ public final class SpringAiChatProvider implements ChatProvider {
     } catch (Exception e) {
       return Flux.error(ProviderException.unavailable(props.name(), model, e));
     }
-  }
-
-  private String system(ChatRequest r) {
-    return r.messages().stream()
-        .filter(m -> m.role() == ChatRole.SYSTEM)
-        .map(ChatMessage::content)
-        .findFirst()
-        .orElse("Answer clearly. Do not fabricate facts or claim external actions occurred.");
-  }
-
-  private String user(ChatRequest r) {
-    return r.messages().stream()
-        .map(m -> m.role() + ": " + m.content())
-        .collect(java.util.stream.Collectors.joining("\n"));
   }
 
   public String providerName() {

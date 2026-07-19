@@ -21,15 +21,12 @@ public final class DocumentIngestionService {
       DocumentId documentId, int chunksCreated, Duration duration, String status) {}
 
   private final DocumentRepositoryPort documents;
-  private final RagServices.DocumentChunker chunker;
+  private final DocumentChunker chunker;
   private final EmbeddingProvider embeddings;
-  private final RagServices.VectorStore vectors;
+  private final VectorStore vectors;
 
   public DocumentIngestionService(
-      DocumentRepositoryPort d,
-      RagServices.DocumentChunker c,
-      EmbeddingProvider e,
-      RagServices.VectorStore v) {
+      DocumentRepositoryPort d, DocumentChunker c, EmbeddingProvider e, VectorStore v) {
     documents = d;
     chunker = c;
     embeddings = e;

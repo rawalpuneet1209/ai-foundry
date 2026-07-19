@@ -1,6 +1,6 @@
 package com.aifoundry.ai.gateway.api.approval;
 
-import com.aifoundry.ai.application.tool.ToolServices.*;
+import com.aifoundry.ai.application.tool.ApprovalService;
 import com.aifoundry.platform.common.error.ValidationException;
 import java.security.Principal;
 import org.springframework.web.bind.annotation.*;
@@ -17,18 +17,18 @@ public class ApprovalController {
   }
 
   @GetMapping("/{id}")
-  public ApprovalDecision get(@PathVariable String id) {
+  public ApprovalService.Decision get(@PathVariable String id) {
     return approvals.find(id).orElseThrow(() -> new ValidationException("Approval not found"));
   }
 
   @PostMapping("/{id}/approve")
-  public ApprovalDecision approve(
+  public ApprovalService.Decision approve(
       @PathVariable String id, @RequestBody(required = false) DecisionRequest r, Principal p) {
     return approvals.decide(id, true, actor(p), r == null ? null : r.comment());
   }
 
   @PostMapping("/{id}/reject")
-  public ApprovalDecision reject(
+  public ApprovalService.Decision reject(
       @PathVariable String id, @RequestBody(required = false) DecisionRequest r, Principal p) {
     return approvals.decide(id, false, actor(p), r == null ? null : r.comment());
   }

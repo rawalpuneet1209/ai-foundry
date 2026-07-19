@@ -1,7 +1,6 @@
 package com.aifoundry.ai.gateway.api.agent;
 
 import com.aifoundry.ai.application.agent.*;
-import com.aifoundry.ai.domain.agent.AgentModels.*;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.util.*;
@@ -16,23 +15,23 @@ public class AgentController {
       @NotBlank String message,
       Map<String, Object> context) {}
 
-  private final AgentServices.Registry registry;
-  private final BankingAgents.Supervisor supervisor;
+  private final AgentRegistry registry;
+  private final AgentSupervisor supervisor;
 
-  public AgentController(AgentServices.Registry r, BankingAgents.Supervisor s) {
+  public AgentController(AgentRegistry r, AgentSupervisor s) {
     registry = r;
     supervisor = s;
   }
 
   @GetMapping
-  public List<Definition> agents() {
+  public List<AgentDefinition> agents() {
     return registry.definitions();
   }
 
   @PostMapping("/execute")
-  public Response execute(@Valid @RequestBody ExecuteRequest r) {
+  public AgentResponse execute(@Valid @RequestBody ExecuteRequest r) {
     return supervisor.execute(
-        new Request(
+        new AgentRequest(
             UUID.randomUUID().toString(),
             r.conversationId(),
             r.userId(),

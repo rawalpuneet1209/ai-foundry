@@ -1,10 +1,12 @@
 package com.aifoundry.ai.application.mcp;
 
-import com.aifoundry.ai.application.tool.ToolServices.*;
+import com.aifoundry.ai.application.tool.ToolDefinition;
+import com.aifoundry.ai.application.tool.ToolRequest;
+import com.aifoundry.ai.application.tool.ToolResult;
 import java.util.*;
 
 public interface McpToolGateway {
-  List<Definition> discoverTools();
+  List<ToolDefinition> discoverTools();
 
-  Result invoke(Request request);
+  ToolResult invoke(ToolRequest request);
 }

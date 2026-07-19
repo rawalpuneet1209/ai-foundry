@@ -1,14 +1,17 @@
 package com.aifoundry.ai.application.mcp;
 
-import com.aifoundry.ai.application.tool.ToolServices.*;
+import com.aifoundry.ai.application.tool.ToolDefinition;
+import com.aifoundry.ai.application.tool.ToolRequest;
+import com.aifoundry.ai.application.tool.ToolResult;
 import java.util.*;
 
 public final class NoOpMcpToolGateway implements McpToolGateway {
-  public List<Definition> discoverTools() {
+  public List<ToolDefinition> discoverTools() {
     return List.of();
   }
 
-  public Result invoke(Request r) {
-    return new Result(r.requestId(), r.toolName(), false, Map.of(), "MCP is disabled");
+  public ToolResult invoke(ToolRequest r) {
+    return new ToolResult(
+        r.requestId(), r.toolName(), ToolResult.Status.FAILED, Map.of(), "MCP is disabled");
   }
 }

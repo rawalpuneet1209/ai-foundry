@@ -1,210 +1,286 @@
 package com.aifoundry.ai.application.agent;
 
-import com.aifoundry.ai.domain.agent.AgentModels.*;
-import com.aifoundry.ai.domain.chat.*;
+import com.aifoundry.ai.application.prompt.PromptService;
+import com.aifoundry.ai.application.tool.ToolExecutionService;
+import com.aifoundry.ai.application.tool.ToolRequest;
+import com.aifoundry.ai.application.tool.ToolResult;
+import com.aifoundry.ai.domain.agent.AgentModels.Action;
+import com.aifoundry.ai.domain.agent.AgentModels.ActionStatus;
+import com.aifoundry.ai.domain.agent.AgentModels.AgentId;
+import com.aifoundry.ai.domain.agent.AgentModels.AgentType;
+import com.aifoundry.ai.domain.agent.AgentModels.ExecutionStatus;
+import com.aifoundry.ai.domain.chat.ChatMessage;
+import com.aifoundry.ai.domain.chat.ChatOptions;
+import com.aifoundry.ai.domain.chat.ChatRequest;
+import com.aifoundry.ai.domain.chat.ChatRole;
 import com.aifoundry.ai.provider.spi.ChatProvider;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 public final class BankingAgents {
   private BankingAgents() {}
 
-  public abstract static class BankingAgent implements AgentServices.Agent {
-    private final Definition definition;
+  public abstract static class BankingAgent implements Agent {
+    private final AgentDefinition definition;
+    private final String promptTemplateId;
+    private final boolean retrievalEnabled;
+    private final PromptService prompts;
+    private final ToolExecutionService tools;
     private final ChatProvider chat;
 
     protected BankingAgent(
-        ChatProvider c,
+        PromptService prompts,
+        ToolExecutionService tools,
+        ChatProvider chat,
         String id,
         String name,
         AgentType type,
-        Set<String> tools,
-        boolean approval) {
-      chat = c;
+        String promptTemplateId,
+        Set<String> allowedTools,
+        boolean retrievalEnabled,
+        boolean approvalEnabled) {
+      this.prompts = prompts;
+      this.tools = tools;
+      this.chat = chat;
+      this.promptTemplateId = promptTemplateId;
+      this.retrievalEnabled = retrievalEnabled;
       definition =
-          new Definition(
+          new AgentDefinition(
               new AgentId(id),
               name,
               type,
               name + " specialist",
               Set.of("CHAT", "SAFE_GUIDANCE"),
-              tools,
-              approval);
+              allowedTools,
+              approvalEnabled);
     }
 
-    public Definition definition() {
+    @Override
+    public AgentDefinition definition() {
       return definition;
     }
 
-    protected abstract String safety();
-
-    public Response execute(Request r) {
-      if (r.message() == null || r.message().isBlank())
-        return new Response(
-            r.executionId(),
-            definition.id(),
-            "A message is required.",
-            ExecutionStatus.FAILED,
-            List.of(),
-            Map.of());
-      String prompt = safety() + "\nUser request: " + r.message();
+    @Override
+    public AgentResponse execute(AgentRequest request) {
+      if (request.message() == null || request.message().isBlank()) {
+        return response(
+            request, "A message is required.", ExecutionStatus.FAILED, List.of(), Map.of());
+      }
+      List<Action> actions = new ArrayList<>();
       try {
-        var result =
-            chat.chat(
-                new ChatRequest(
-                    r.conversationId(),
+        boolean useRag = retrievalEnabled || Boolean.TRUE.equals(request.context().get("useRag"));
+        ChatRequest prompt =
+            prompts.build(
+                new PromptService.Request(
+                    request.conversationId(),
+                    promptTemplateId,
                     null,
-                    List.of(
-                        new ChatMessage(ChatRole.SYSTEM, prompt, Map.of()),
-                        new ChatMessage(ChatRole.USER, r.message(), Map.of())),
+                    request.message(),
                     ChatOptions.defaults(),
+                    useRag,
+                    List.of(),
                     Map.of("agentId", definition.id().value())));
-        return new Response(
-            r.executionId(),
-            definition.id(),
+
+        ToolResult toolResult = executeRequestedTool(request);
+        if (toolResult != null) {
+          ActionStatus actionStatus = actionStatus(toolResult.status());
+          actions.add(
+              new Action(
+                  request.executionId(),
+                  toolResult.toolName(),
+                  arguments(request.context()),
+                  toolResult.output(),
+                  actionStatus));
+          if (toolResult.status() == ToolResult.Status.APPROVAL_REQUIRED) {
+            return response(
+                request,
+                "Approval is required before this action can be executed.",
+                ExecutionStatus.APPROVAL_REQUIRED,
+                actions,
+                toolResult.output());
+          }
+          if (!toolResult.success()) {
+            return response(
+                request,
+                toolResult.errorMessage(),
+                ExecutionStatus.FAILED,
+                actions,
+                toolResult.output());
+          }
+          prompt = withToolResult(prompt, toolResult);
+        }
+
+        var result = chat.chat(prompt);
+        return response(
+            request,
             result.content(),
             ExecutionStatus.COMPLETED,
-            List.of(),
+            actions,
             Map.of("agentType", definition.type().name()));
-      } catch (Exception e) {
-        return new Response(
-            r.executionId(),
-            definition.id(),
+      } catch (RuntimeException exception) {
+        return response(
+            request,
             "The assistant could not complete the request safely. Please try again.",
             ExecutionStatus.FAILED,
-            List.of(),
+            actions,
             Map.of("agentType", definition.type().name()));
       }
+    }
+
+    private ChatRequest withToolResult(ChatRequest prompt, ToolResult result) {
+      List<ChatMessage> messages = new ArrayList<>(prompt.messages());
+      messages.add(
+          new ChatMessage(
+              ChatRole.TOOL, result.output().toString(), Map.of("tool", result.toolName())));
+      return new ChatRequest(
+          prompt.conversationId(), prompt.model(), messages, prompt.options(), prompt.metadata());
+    }
+
+    private ToolResult executeRequestedTool(AgentRequest request) {
+      Object toolName = request.context().get("toolName");
+      if (toolName == null || toolName.toString().isBlank()) {
+        return null;
+      }
+      Map<String, Object> toolContext =
+          request.context().containsKey("approvalId")
+              ? Map.of(
+                  "userId",
+                  String.valueOf(request.userId()),
+                  "approvalId",
+                  request.context().get("approvalId"))
+              : Map.of("userId", String.valueOf(request.userId()));
+      return tools.execute(
+          new ToolRequest(
+              UUID.randomUUID().toString(),
+              toolName.toString(),
+              arguments(request.context()),
+              toolContext),
+          definition.allowedTools());
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> arguments(Map<String, Object> context) {
+      Object arguments = context.get("arguments");
+      return arguments instanceof Map<?, ?> ? (Map<String, Object>) arguments : Map.of();
+    }
+
+    private ActionStatus actionStatus(ToolResult.Status status) {
+      return switch (status) {
+        case COMPLETED -> ActionStatus.EXECUTED;
+        case APPROVAL_REQUIRED -> ActionStatus.WAITING_APPROVAL;
+        case REJECTED -> ActionStatus.REJECTED;
+        case FAILED -> ActionStatus.FAILED;
+      };
+    }
+
+    private AgentResponse response(
+        AgentRequest request,
+        String content,
+        ExecutionStatus status,
+        List<Action> actions,
+        Map<String, Object> metadata) {
+      return new AgentResponse(
+          request.executionId(), definition.id(), content, status, actions, metadata);
     }
   }
 
   public static final class GeneralBankingAgent extends BankingAgent {
-    public GeneralBankingAgent(ChatProvider c) {
+    public GeneralBankingAgent(
+        PromptService prompts, ToolExecutionService tools, ChatProvider chat) {
       super(
-          c,
+          prompts,
+          tools,
+          chat,
           "general-banking-agent",
           "General Banking",
           AgentType.GENERAL_BANKING,
+          "agent-general-banking",
           Set.of(),
+          false,
           false);
-    }
-
-    protected String safety() {
-      return "Give general banking guidance. Do not invent facts or claim actions occurred.";
     }
   }
 
   public static final class FraudAgent extends BankingAgent {
-    public FraudAgent(ChatProvider c) {
+    public FraudAgent(PromptService prompts, ToolExecutionService tools, ChatProvider chat) {
       super(
-          c,
+          prompts,
+          tools,
+          chat,
           "fraud-agent",
           "Fraud",
           AgentType.FRAUD,
+          "agent-fraud",
           Set.of("transaction-lookup", "freeze-card"),
+          false,
           true);
-    }
-
-    protected String safety() {
-      return "Prioritize safety. A card freeze requires approval. Never claim an action succeeded"
-          + " without a confirmed tool result.";
     }
   }
 
   public static final class LoanAgent extends BankingAgent {
-    public LoanAgent(ChatProvider c) {
-      super(c, "loan-agent", "Loan", AgentType.LOAN, Set.of("loan-eligibility-check"), false);
-    }
-
-    protected String safety() {
-      return "Label calculations illustrative and never present a final underwriting decision.";
+    public LoanAgent(PromptService prompts, ToolExecutionService tools, ChatProvider chat) {
+      super(
+          prompts,
+          tools,
+          chat,
+          "loan-agent",
+          "Loan",
+          AgentType.LOAN,
+          "agent-loan",
+          Set.of("loan-eligibility-check"),
+          true,
+          false);
     }
   }
 
   public static final class CreditCardAgent extends BankingAgent {
-    public CreditCardAgent(ChatProvider c) {
+    public CreditCardAgent(PromptService prompts, ToolExecutionService tools, ChatProvider chat) {
       super(
-          c,
+          prompts,
+          tools,
+          chat,
           "credit-card-agent",
           "Credit Card",
           AgentType.CREDIT_CARD,
+          "agent-credit-card",
           Set.of("card-details", "card-replacement-request"),
+          false,
           true);
-    }
-
-    protected String safety() {
-      return "Mask card data. Replacement requires approval and must not be claimed successful"
-          + " without a tool result.";
     }
   }
 
   public static final class AccountAgent extends BankingAgent {
-    public AccountAgent(ChatProvider c) {
+    public AccountAgent(PromptService prompts, ToolExecutionService tools, ChatProvider chat) {
       super(
-          c,
+          prompts,
+          tools,
+          chat,
           "account-agent",
           "Account",
           AgentType.ACCOUNT,
+          "agent-account",
           Set.of("account-summary", "transaction-lookup"),
+          false,
           false);
-    }
-
-    protected String safety() {
-      return "Mask account numbers. Do not initiate or claim transactions.";
     }
   }
 
   public static final class KnowledgeAgent extends BankingAgent {
-    public KnowledgeAgent(ChatProvider c) {
-      super(c, "knowledge-agent", "Knowledge", AgentType.KNOWLEDGE, Set.of(), false);
-    }
-
-    protected String safety() {
-      return "Use supplied knowledge only, cite evidence, and say when context is insufficient.";
-    }
-  }
-
-  public static final class Supervisor {
-    private final AgentServices.IntentClassifier classifier;
-    private final AgentServices.Registry registry;
-
-    public Supervisor(AgentServices.IntentClassifier c, AgentServices.Registry r) {
-      classifier = c;
-      registry = r;
-    }
-
-    public Response execute(Request request) {
-      String execution =
-          request.executionId() == null || request.executionId().isBlank()
-              ? UUID.randomUUID().toString()
-              : request.executionId();
-      Request normalized =
-          new Request(
-              execution,
-              request.conversationId(),
-              request.userId(),
-              request.message(),
-              request.context());
-      AgentType type = classifier.classify(request.message(), request.context());
-      var agent = registry.byType(type).or(() -> registry.byType(AgentType.GENERAL_BANKING));
-      if (agent.isEmpty())
-        return new Response(
-            execution,
-            new AgentId("supervisor"),
-            "No suitable agent is available.",
-            ExecutionStatus.FAILED,
-            List.of(),
-            Map.of("classifiedIntent", type.name()));
-      Response response = agent.get().execute(normalized);
-      Map<String, Object> metadata = new HashMap<>(response.metadata());
-      metadata.put("classifiedIntent", type.name());
-      metadata.put("selectedAgent", agent.get().definition().id().value());
-      return new Response(
-          response.executionId(),
-          response.agentId(),
-          response.content(),
-          response.status(),
-          response.actions(),
-          metadata);
+    public KnowledgeAgent(PromptService prompts, ToolExecutionService tools, ChatProvider chat) {
+      super(
+          prompts,
+          tools,
+          chat,
+          "knowledge-agent",
+          "Knowledge",
+          AgentType.KNOWLEDGE,
+          "agent-knowledge",
+          Set.of(),
+          true,
+          false);
     }
   }
 }

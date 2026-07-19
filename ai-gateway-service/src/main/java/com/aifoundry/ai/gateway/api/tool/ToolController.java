@@ -1,6 +1,6 @@
 package com.aifoundry.ai.gateway.api.tool;
 
-import com.aifoundry.ai.application.tool.ToolServices.*;
+import com.aifoundry.ai.application.tool.*;
 import java.util.*;
 import org.springframework.web.bind.annotation.*;
 
@@ -13,23 +13,23 @@ public class ToolController {
       Set<String> allowedTools,
       Map<String, Object> context) {}
 
-  private final Registry registry;
-  private final Executor executor;
+  private final ToolRegistry registry;
+  private final ToolExecutionService executor;
 
-  public ToolController(Registry r, Executor e) {
+  public ToolController(ToolRegistry r, ToolExecutionService e) {
     registry = r;
     executor = e;
   }
 
   @GetMapping
-  public List<Definition> tools() {
+  public List<ToolDefinition> tools() {
     return registry.definitions();
   }
 
   @PostMapping("/execute")
-  public Result execute(@RequestBody ExecuteRequest r) {
+  public ToolResult execute(@RequestBody ExecuteRequest r) {
     return executor.execute(
-        new Request(UUID.randomUUID().toString(), r.toolName(), r.arguments(), r.context()),
+        new ToolRequest(UUID.randomUUID().toString(), r.toolName(), r.arguments(), r.context()),
         r.allowedTools() == null ? Set.of() : r.allowedTools());
   }
 }

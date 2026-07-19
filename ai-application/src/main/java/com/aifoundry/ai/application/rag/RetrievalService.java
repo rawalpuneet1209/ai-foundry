@@ -19,10 +19,10 @@ public final class RetrievalService {
   }
 
   private final EmbeddingProvider embeddings;
-  private final RagServices.VectorStore vectors;
+  private final VectorStore vectors;
   private final QueryRewriter rewriter;
 
-  public RetrievalService(EmbeddingProvider e, RagServices.VectorStore v, QueryRewriter r) {
+  public RetrievalService(EmbeddingProvider e, VectorStore v, QueryRewriter r) {
     embeddings = e;
     vectors = v;
     rewriter = r;
@@ -40,10 +40,21 @@ public final class RetrievalService {
           "Embedding provider returned no query vector",
           UUID.randomUUID().toString(),
           null);
-    var chunks = vectors.search(q, response.embeddings().getFirst().vector());
+    var chunks =
+        vectors.search(q, response.embeddings().getFirst().vector()).stream()
+            .map(
+                result ->
+                    new Chunk(
+                        result.chunk().chunkId(),
+                        result.chunk().documentId().value(),
+                        result.chunk().content(),
+                        result.score(),
+                        result.chunk().metadata()))
+            .toList();
     return new RetrievalResult(
         UUID.randomUUID().toString(),
         q.query(),
+        query,
         chunks,
         Duration.ofNanos(System.nanoTime() - start));
   }

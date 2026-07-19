@@ -204,7 +204,9 @@ The response identifies the selected agent and classified intent in metadata.
 
 ## 6. Agents and tools
 
-Agent definitions advertise allowed tools, but the current agent execution pipeline does not automatically call `ToolServices.Executor`. Tool execution is explicitly invoked through:
+Agent definitions advertise allowed tools. `AgentSupervisor` routes to a specialist. The selected
+agent prepares retrieval context and its prompt, then executes any requested tool through
+`ToolExecutionService` before the final provider call.
 
 ```text
 POST /api/v1/tools/execute
@@ -320,7 +322,7 @@ The current specialist implementations return an empty `actions` list because to
 To extend the system:
 
 1. Add an `AgentType` when a new routing category is required.
-2. Implement `AgentServices.Agent` or extend `BankingAgents.BankingAgent`.
+2. Implement `Agent` or extend `BankingAgents.BankingAgent`.
 3. Define a stable agent ID, safety prompt, and allowed-tool set.
 4. Register the agent in `ApplicationConfiguration`.
 5. Extend `RuleBasedIntentClassifier` or replace it with another `IntentClassifier`.
@@ -328,14 +330,16 @@ To extend the system:
 7. Add routing, safety, failure, and tool-authorization tests.
 8. Update this document and `SEQUENCE_AND_WORKFLOWS.md`.
 
-New agents must not bypass `ToolServices.Executor` or the approval service for sensitive actions.
+New agents must not bypass `ToolExecutionService` or `ApprovalService` for sensitive actions.
 
 ## 11. Current limitations
 
-- Agents do not automatically retrieve RAG context.
-- Agents do not automatically plan or execute tools.
-- The knowledge agent is not selected by the current classifier.
-- Agent actions are currently empty in normal execution responses.
+- Retrieval is in-memory and is enabled automatically only for the loan and knowledge specialists,
+  or when an agent request explicitly sets `useRag=true`.
+- Agents execute only an explicitly requested `context.toolName`; autonomous multi-step planning is
+  outside the current scope.
+- Intent classification is deterministic keyword matching rather than model-based classification.
+- Agent action history covers requested tool operations; ordinary advisory responses have no actions.
 - Registry and approval state are in-memory and not shared across replicas.
 - Tools are simulated; there is no real bank connection.
 - `allowedTools` is supplied by the tool API caller rather than derived from a server-side agent execution session.

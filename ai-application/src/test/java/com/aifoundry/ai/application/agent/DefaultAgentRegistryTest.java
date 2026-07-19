@@ -2,22 +2,23 @@ package com.aifoundry.ai.application.agent;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.aifoundry.ai.domain.agent.AgentModels.*;
+import com.aifoundry.ai.domain.agent.AgentModels.AgentId;
+import com.aifoundry.ai.domain.agent.AgentModels.AgentType;
 import java.util.*;
 import org.junit.jupiter.api.Test;
 
 class DefaultAgentRegistryTest {
   @Test
   void rejectsDuplicates() {
-    var r = new AgentServices.Registry();
-    AgentServices.Agent a =
-        new AgentServices.Agent() {
-          public Definition definition() {
-            return new Definition(
+    var r = new DefaultAgentRegistry();
+    Agent a =
+        new Agent() {
+          public AgentDefinition definition() {
+            return new AgentDefinition(
                 new AgentId("x"), "x", AgentType.ACCOUNT, "x", Set.of(), Set.of(), false);
           }
 
-          public Response execute(Request q) {
+          public AgentResponse execute(AgentRequest q) {
             return null;
           }
         };
