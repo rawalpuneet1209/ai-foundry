@@ -1,6 +1,8 @@
 package com.aifoundry.ai.gateway.api.approval;
 
 import com.aifoundry.ai.application.tool.ApprovalService;
+import com.aifoundry.ai.application.tool.ToolExecutionService;
+import com.aifoundry.ai.application.tool.ToolResult;
 import com.aifoundry.platform.common.error.ValidationException;
 import java.security.Principal;
 import org.springframework.web.bind.annotation.*;
@@ -10,10 +12,15 @@ import org.springframework.web.bind.annotation.*;
 public class ApprovalController {
   public record DecisionRequest(String comment) {}
 
-  private final ApprovalService approvals;
+  public record ApprovalExecutionResponse(
+      ApprovalService.Decision decision, ToolResult toolResult) {}
 
-  public ApprovalController(ApprovalService a) {
-    approvals = a;
+  private final ApprovalService approvals;
+  private final ToolExecutionService tools;
+
+  public ApprovalController(ApprovalService approvals, ToolExecutionService tools) {
+    this.approvals = approvals;
+    this.tools = tools;
   }
 
   @GetMapping("/{id}")
@@ -22,15 +29,20 @@ public class ApprovalController {
   }
 
   @PostMapping("/{id}/approve")
-  public ApprovalService.Decision approve(
+  public ApprovalExecutionResponse approve(
       @PathVariable String id, @RequestBody(required = false) DecisionRequest r, Principal p) {
-    return approvals.decide(id, true, actor(p), r == null ? null : r.comment());
+    ApprovalService.Decision decision =
+        approvals.decide(id, true, actor(p), r == null ? null : r.comment());
+    return new ApprovalExecutionResponse(decision, tools.resume(id));
   }
 
   @PostMapping("/{id}/reject")
-  public ApprovalService.Decision reject(
+  public ApprovalExecutionResponse reject(
       @PathVariable String id, @RequestBody(required = false) DecisionRequest r, Principal p) {
-    return approvals.decide(id, false, actor(p), r == null ? null : r.comment());
+    ApprovalService.Decision decision =
+        approvals.decide(id, false, actor(p), r == null ? null : r.comment());
+    tools.discard(id);
+    return new ApprovalExecutionResponse(decision, null);
   }
 
   private String actor(Principal p) {

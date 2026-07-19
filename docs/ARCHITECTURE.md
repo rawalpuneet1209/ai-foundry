@@ -258,13 +258,15 @@ flowchart LR
     Classifier --> Registry[Agent registry]
     Registry --> Specialist[Selected specialist]
     Registry -. no match .-> General[General banking fallback]
-    Specialist --> Provider[Chat provider]
+    Specialist --> Retrieval[Retrieval service]
+    Retrieval --> Selector[Rule-based tool selector]
+    Selector --> Provider[Chat provider]
     General --> Provider
     Provider --> AgentResponse[Agent response and routing metadata]
 ```
 
 `AgentSupervisor` classifies the intent and selects one specialist. Specialists use resource-backed
-prompts, optional retrieval, and `ToolExecutionService`. If a protected tool is requested, the
+prompts, retrieval, rule-based tool selection, and `ToolExecutionService`. If a protected tool is selected, the
 workflow returns `APPROVAL_REQUIRED` before provider invocation and resumes only with an approved
 decision.
 
@@ -278,14 +280,16 @@ flowchart TD
     Registered -- No --> Missing[Failed result]
     Registered -- Yes --> Approval{Approval required?}
     Approval -- No --> Execute[Execute simulated tool]
-    Approval -- Yes --> Decision{Approved decision exists?}
-    Decision -- No --> Pending[Create/return pending approval]
-    Decision -- Yes --> Execute
+    Approval -- Yes --> Pending[Store request and create pending approval]
+    Pending --> Approve[Approve by approvalId]
+    Approve --> Load[Load stored request]
+    Load --> Execute
     Execute --> Mask[Mask account/card identifiers]
     Mask --> ToolResult
 ```
 
-Approval requests expire after 15 minutes. Approve/reject decisions are terminal. Sensitive tools must be retried with the returned `approvalId` after approval.
+Approval requests expire after 15 minutes. Approve/reject decisions are terminal. Approval loads
+and executes the stored request, so the client sends only the `approvalId` in the approval URL.
 
 ## 6. HTTP architecture
 
@@ -441,7 +445,7 @@ The main supported extension points are:
 
 - In-memory state is not durable or shared across replicas.
 - Retrieval uses process-local vectors and a pass-through query rewriter by default.
-- Specialist agents invoke only explicitly requested tools; autonomous planning is not implemented.
+- Specialist agents use deterministic single-tool selection; autonomous multi-step planning is not implemented.
 - Intent classification uses deterministic keyword rules.
 - Streaming assistant responses are persisted only after the publisher completes successfully.
 - Tool outputs and banking actions are simulations only.

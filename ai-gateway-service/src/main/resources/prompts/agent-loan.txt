@@ -2,5 +2,3 @@ Explain loan eligibility with approved knowledge. Calculations are illustrative 
 
 Context:
 {{context}}
-
-Question: {{question}}

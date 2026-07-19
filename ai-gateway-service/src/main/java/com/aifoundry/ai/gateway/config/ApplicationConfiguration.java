@@ -1,11 +1,6 @@
 package com.aifoundry.ai.gateway.config;
 
-import com.aifoundry.ai.application.agent.AgentRegistry;
-import com.aifoundry.ai.application.agent.AgentSupervisor;
-import com.aifoundry.ai.application.agent.BankingAgents;
-import com.aifoundry.ai.application.agent.DefaultAgentRegistry;
-import com.aifoundry.ai.application.agent.IntentClassifier;
-import com.aifoundry.ai.application.agent.RuleBasedIntentClassifier;
+import com.aifoundry.ai.application.agent.*;
 import com.aifoundry.ai.application.chat.ChatCommandValidator;
 import com.aifoundry.ai.application.chat.DefaultChatService;
 import com.aifoundry.ai.application.mcp.McpToolGateway;
@@ -32,6 +27,8 @@ import com.aifoundry.ai.application.tool.ApprovalService;
 import com.aifoundry.ai.application.tool.BankingTools;
 import com.aifoundry.ai.application.tool.DefaultToolRegistry;
 import com.aifoundry.ai.application.tool.InMemoryApprovalService;
+import com.aifoundry.ai.application.tool.InMemoryPendingToolRequestRepository;
+import com.aifoundry.ai.application.tool.PendingToolRequestRepository;
 import com.aifoundry.ai.application.tool.ToolExecutionService;
 import com.aifoundry.ai.application.tool.ToolRegistry;
 import com.aifoundry.ai.gateway.adapter.prompt.SpringPromptTemplateRepository;
@@ -161,8 +158,14 @@ public class ApplicationConfiguration {
   }
 
   @Bean
-  ToolExecutionService toolExecutor(ToolRegistry tools, ApprovalService approvals) {
-    return new ToolExecutionService(tools, approvals);
+  ToolExecutionService toolExecutor(
+      ToolRegistry tools, ApprovalService approvals, PendingToolRequestRepository pendingRequests) {
+    return new ToolExecutionService(tools, approvals, pendingRequests);
+  }
+
+  @Bean
+  PendingToolRequestRepository pendingToolRequests() {
+    return new InMemoryPendingToolRequestRepository();
   }
 
   @Bean
@@ -171,15 +174,21 @@ public class ApplicationConfiguration {
   }
 
   @Bean
-  AgentRegistry agents(PromptService prompts, ToolExecutionService tools, ChatProvider chat) {
+  AgentRegistry agents(
+      PromptService prompts, ToolSelector selector, ToolExecutionService tools, ChatProvider chat) {
     DefaultAgentRegistry registry = new DefaultAgentRegistry();
-    registry.register(new BankingAgents.GeneralBankingAgent(prompts, tools, chat));
-    registry.register(new BankingAgents.FraudAgent(prompts, tools, chat));
-    registry.register(new BankingAgents.LoanAgent(prompts, tools, chat));
-    registry.register(new BankingAgents.CreditCardAgent(prompts, tools, chat));
-    registry.register(new BankingAgents.AccountAgent(prompts, tools, chat));
-    registry.register(new BankingAgents.KnowledgeAgent(prompts, tools, chat));
+    registry.register(new GeneralBankingAgent(prompts, selector, tools, chat));
+    registry.register(new FraudAgent(prompts, selector, tools, chat));
+    registry.register(new LoanAgent(prompts, selector, tools, chat));
+    registry.register(new CreditCardAgent(prompts, selector, tools, chat));
+    registry.register(new AccountAgent(prompts, selector, tools, chat));
+    registry.register(new KnowledgeAgent(prompts, selector, tools, chat));
     return registry;
+  }
+
+  @Bean
+  ToolSelector toolSelector() {
+    return new RuleBasedToolSelector();
   }
 
   @Bean

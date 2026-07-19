@@ -1,5 +1,6 @@
 package com.aifoundry.ai.application.tool;
 
+import com.aifoundry.platform.common.error.ValidationException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
@@ -9,10 +10,13 @@ import java.util.UUID;
 public final class ToolExecutionService {
   private final ToolRegistry tools;
   private final ApprovalService approvals;
+  private final PendingToolRequestRepository pendingRequests;
 
-  public ToolExecutionService(ToolRegistry tools, ApprovalService approvals) {
+  public ToolExecutionService(
+      ToolRegistry tools, ApprovalService approvals, PendingToolRequestRepository pendingRequests) {
     this.tools = tools;
     this.approvals = approvals;
+    this.pendingRequests = pendingRequests;
   }
 
   public ToolResult execute(ToolRequest request, Set<String> allowedTools) {
@@ -24,7 +28,7 @@ public final class ToolExecutionService {
       return failed(request, "Tool is not registered");
     }
     if (tool.definition().approvalRequired()) {
-      ToolResult approvalResult = approvalResult(request, tool.definition());
+      ToolResult approvalResult = approvalResult(request, tool.definition(), allowedTools);
       if (approvalResult != null) {
         return approvalResult;
       }
@@ -36,7 +40,35 @@ public final class ToolExecutionService {
     }
   }
 
-  private ToolResult approvalResult(ToolRequest request, ToolDefinition definition) {
+  public ToolResult resume(String approvalId) {
+    var pending =
+        pendingRequests
+            .find(approvalId)
+            .orElseThrow(() -> new ValidationException("Pending tool request not found"));
+    var decision =
+        approvals.find(approvalId).orElseThrow(() -> new ValidationException("Approval not found"));
+    if (decision.status() != ApprovalService.Status.APPROVED) {
+      return approvalRequired(pending.request(), approvalId, decision.status());
+    }
+    Tool tool =
+        tools
+            .find(pending.request().toolName())
+            .orElseThrow(() -> new ValidationException("Tool is not registered"));
+    try {
+      ToolResult result = tool.execute(pending.request());
+      pendingRequests.remove(approvalId);
+      return result;
+    } catch (RuntimeException exception) {
+      return failed(pending.request(), "Tool execution failed");
+    }
+  }
+
+  public void discard(String approvalId) {
+    pendingRequests.remove(approvalId);
+  }
+
+  private ToolResult approvalResult(
+      ToolRequest request, ToolDefinition definition, Set<String> allowedTools) {
     String approvalId =
         String.valueOf(request.context().getOrDefault("approvalId", UUID.randomUUID().toString()));
     var decision = approvals.find(approvalId);
@@ -49,6 +81,8 @@ public final class ToolExecutionService {
               definition.description(),
               request.arguments(),
               Instant.now().plus(Duration.ofMinutes(15))));
+      pendingRequests.save(
+          approvalId, new PendingToolRequestRepository.PendingRequest(request, allowedTools));
       return approvalRequired(request, approvalId, ApprovalService.Status.PENDING);
     }
     if (decision.get().status() == ApprovalService.Status.APPROVED) {

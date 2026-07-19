@@ -136,7 +136,7 @@ Apply an overlay with `kubectl apply -k k8s/overlays/local`. Replace the example
 5. Security profiles, actuator/Prometheus, Docker, Kubernetes, and scripts.
 6. Framework-free agent definitions, deterministic banking intent routing, registry, and prompt safety rules.
 
-The in-memory stores are intentionally local baselines: state is lost on restart and is not shared between replicas. MCP defaults to a controlled no-op gateway. All banking tools and their results are simulated; approval-gated tools cannot run before an explicit approval decision.
+The in-memory stores are intentionally local baselines: state is lost on restart and is not shared between replicas. MCP defaults to a controlled no-op gateway. All specialist agents retrieve knowledge context and select allow-listed tools with deterministic rules. Banking tools and their results are simulated; approval-gated requests are stored and resume from the approval ID only after an explicit decision.
 
 Additional endpoints include `GET /api/v1/agents`, `GET /api/v1/tools`, `POST /api/v1/tools/execute`, document get/delete operations, and approval get/approve/reject operations under `/api/v1/approvals`.
 

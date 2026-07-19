@@ -31,7 +31,9 @@ class DefaultPromptServiceTest {
 
     assertEquals(0, embeddingCalls.get());
     assertEquals(ChatRole.SYSTEM, request.messages().getFirst().role());
-    assertTrue(request.messages().getFirst().content().contains("question"));
+    assertFalse(request.messages().getFirst().content().contains("question"));
+    assertEquals(ChatRole.USER, request.messages().getLast().role());
+    assertEquals("question", request.messages().getLast().content());
     assertFalse(request.metadata().containsKey("retrievalQueryId"));
   }
 
@@ -64,12 +66,9 @@ class DefaultPromptServiceTest {
           private final Map<String, PromptModels.Template> templates =
               Map.of(
                   "chat-default",
-                  template("chat-default", "Answer {{question}}", Set.of("question")),
+                  template("chat-default", "Answer clearly", Set.of()),
                   "rag-banking",
-                  template(
-                      "rag-banking",
-                      "Context {{context}} Question {{question}}",
-                      Set.of("context", "question")));
+                  template("rag-banking", "Context {{context}}", Set.of("context")));
 
           @Override
           public Optional<PromptModels.Template> findById(String id) {

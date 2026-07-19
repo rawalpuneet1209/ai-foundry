@@ -8,6 +8,7 @@ import com.aifoundry.ai.domain.agent.AgentModels.*;
 import com.aifoundry.ai.domain.chat.*;
 import com.aifoundry.ai.provider.spi.*;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class SpecialistAgentsTest {
@@ -37,31 +38,60 @@ class SpecialistAgentsTest {
         }
       };
 
+  private final AtomicInteger ragRequests = new AtomicInteger();
   private final PromptService prompts =
-      request ->
-          new ChatRequest(
-              request.conversationId(),
-              request.model(),
-              List.of(new ChatMessage(ChatRole.USER, request.question(), Map.of())),
-              request.options(),
-              request.metadata());
+      request -> {
+        if (request.useRag()) {
+          ragRequests.incrementAndGet();
+        }
+        return new ChatRequest(
+            request.conversationId(),
+            request.model(),
+            List.of(new ChatMessage(ChatRole.USER, request.question(), Map.of())),
+            request.options(),
+            request.metadata());
+      };
 
   private final ToolExecutionService tools =
-      new ToolExecutionService(new DefaultToolRegistry(), new InMemoryApprovalService());
+      new ToolExecutionService(
+          new DefaultToolRegistry(),
+          new InMemoryApprovalService(),
+          new InMemoryPendingToolRequestRepository());
+  private final ToolSelector selector = new RuleBasedToolSelector();
 
   @Test
   void allSpecialistsComplete() {
     List<Agent> agents =
         List.of(
-            new BankingAgents.GeneralBankingAgent(prompts, tools, provider),
-            new BankingAgents.FraudAgent(prompts, tools, provider),
-            new BankingAgents.LoanAgent(prompts, tools, provider),
-            new BankingAgents.CreditCardAgent(prompts, tools, provider),
-            new BankingAgents.AccountAgent(prompts, tools, provider),
-            new BankingAgents.KnowledgeAgent(prompts, tools, provider));
+            new GeneralBankingAgent(prompts, selector, tools, provider),
+            new FraudAgent(prompts, selector, tools, provider),
+            new LoanAgent(prompts, selector, tools, provider),
+            new CreditCardAgent(prompts, selector, tools, provider),
+            new AccountAgent(prompts, selector, tools, provider),
+            new KnowledgeAgent(prompts, selector, tools, provider));
     for (var a : agents)
       assertEquals(
           ExecutionStatus.COMPLETED,
           a.execute(new AgentRequest("e", "c", "u", "help", Map.of())).status());
+    assertEquals(agents.size(), ragRequests.get());
+  }
+
+  @Test
+  void agentSelectsToolAndUsesUniqueActionId() {
+    DefaultToolRegistry registry = new DefaultToolRegistry();
+    registry.register(new BankingTools.AccountSummaryTool());
+    ToolExecutionService executor =
+        new ToolExecutionService(
+            registry, new InMemoryApprovalService(), new InMemoryPendingToolRequestRepository());
+    Agent agent = new AccountAgent(prompts, selector, executor, provider);
+
+    AgentResponse response =
+        agent.execute(
+            new AgentRequest(
+                "execution-id", "conversation", "user", "Show my account balance", Map.of()));
+
+    assertEquals(ExecutionStatus.COMPLETED, response.status());
+    assertEquals("account-summary", response.actions().getFirst().toolName());
+    assertNotEquals(response.executionId(), response.actions().getFirst().actionId());
   }
 }

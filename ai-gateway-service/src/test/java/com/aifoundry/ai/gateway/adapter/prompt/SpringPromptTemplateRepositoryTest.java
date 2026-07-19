@@ -13,8 +13,8 @@ class SpringPromptTemplateRepositoryTest {
     var template = repository.getRequired("rag-banking");
 
     assertEquals("rag-banking", template.id());
-    assertTrue(template.requiredVariables().contains("question"));
     assertTrue(template.requiredVariables().contains("context"));
+    assertEquals(1, template.requiredVariables().size());
     assertTrue(repository.findAll().size() >= 9);
   }
 }

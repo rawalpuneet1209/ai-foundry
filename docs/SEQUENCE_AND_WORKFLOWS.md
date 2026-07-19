@@ -156,6 +156,9 @@ sequenceDiagram
     participant Classifier as RuleBasedIntentClassifier
     participant Registry as AgentRegistry
     participant Specialist as Selected Banking Agent
+    participant Retrieval as RetrievalService
+    participant Selector as RuleBasedToolSelector
+    participant Tools as ToolExecutionService
     participant Ollama
 
     Client->>API: POST /api/v1/agents/execute
@@ -165,7 +168,12 @@ sequenceDiagram
     Supervisor->>Registry: find specialist by type
     Registry-->>Supervisor: specialist or general fallback
     Supervisor->>Specialist: execute(request)
-    Specialist->>Ollama: safety system prompt + user request
+    Specialist->>Retrieval: rewrite + embed + search
+    Specialist->>Selector: select from message and allowed tools
+    opt a tool is selected
+        Specialist->>Tools: execute selected tool
+    end
+    Specialist->>Ollama: system instructions/context + history + user request
     Ollama-->>Specialist: response
     Specialist-->>Supervisor: AgentResponse
     Supervisor-->>API: response + selectedAgent metadata
@@ -180,11 +188,11 @@ sequenceDiagram
 | `loan`, `mortgage`, `emi`, `interest`, `eligibility` | Loan | `loan-agent` |
 | `card`, `credit card`, `limit`, `statement` | Credit card | `credit-card-agent` |
 | `balance`, `account`, `transaction`, `debit` | Account | `account-agent` |
+| `policy`, `knowledge`, `documentation` | Knowledge | `knowledge-agent` |
 | Anything else | General banking | `general-banking-agent` |
 
-The `knowledge-agent` is registered and discoverable but is not selected by the current keyword classifier.
-
-Important boundary: agents advertise allowed tools and use specialist safety prompts, but agent execution does not automatically infer or invoke a tool. Tools are invoked through `/api/v1/tools/execute`.
+Every specialist retrieves RAG context. `RuleBasedToolSelector` also infers a permitted tool from
+the natural-language request; callers do not send `toolName` to the agent API.
 
 ## 6. Tool execution and approval
 
@@ -196,11 +204,8 @@ flowchart TD
     C -- No --> Y[Failed result: not registered]
     C -- Yes --> D{Approval required?}
     D -- No --> H[Execute simulated tool]
-    D -- Yes --> E{approvalId supplied and found?}
-    E -- No --> F[Create 15-minute pending approval]
-    E -- Yes --> G{Status APPROVED?}
-    G -- No --> Z[Return approval status; do not execute]
-    G -- Yes --> H
+    D -- Yes --> F[Store request and create 15-minute approval]
+    F --> Z[Return APPROVAL_REQUIRED and approvalId]
     H --> I[Return masked simulated output]
 ```
 
@@ -230,7 +235,9 @@ stateDiagram-v2
     EXPIRED --> [*]
 ```
 
-To execute an approved action, repeat the tool request with the returned `approvalId` in `context`. Decisions cannot be changed after leaving `PENDING`.
+`POST /api/v1/approvals/{approvalId}/approve` loads the stored request, executes it, removes it
+from the pending store, and returns the approval decision with the final tool result. The client
+does not resend tool details. Decisions cannot be changed after leaving `PENDING`.
 
 ## 7. Security workflow
 

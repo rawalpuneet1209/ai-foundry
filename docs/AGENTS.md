@@ -246,27 +246,25 @@ sequenceDiagram
     participant Approval as ApprovalService
     participant Tool as Sensitive Tool
 
-    Caller->>Tools: execute sensitive tool
+    Caller->>Tools: natural-language agent request selects sensitive tool
     Tools->>Approval: find or create approval
     Approval-->>Caller: PENDING + approvalId
     Approver->>Approval: POST /approve
-    Approval-->>Approver: APPROVED
-    Caller->>Tools: retry with context.approvalId
-    Tools->>Approval: verify APPROVED
+    Approval->>Tools: load stored request
     Tools->>Tool: execute simulated action
-    Tool-->>Caller: confirmed simulated result
+    Tool-->>Approver: decision + confirmed simulated result
 ```
 
 Example first request:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/tools/execute \
+curl -X POST http://localhost:8080/api/v1/agents/execute \
   -H 'Content-Type: application/json' \
   -d '{
-    "toolName": "freeze-card",
-    "allowedTools": ["freeze-card"],
-    "arguments": {"cardId": "4111111111111111"},
-    "context": {"userId": "user-123"}
+    "conversationId": "card-help",
+    "userId": "user-123",
+    "message": "Freeze my card",
+    "context": {"cardId": "4111111111111111"}
   }'
 ```
 
@@ -274,18 +272,11 @@ Approve the returned ID:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/approvals/APPROVAL_ID/approve \
-  -H 'Content-Type: application/json' \
-  -d '{"comment":"Verified by support"}'
+  -H 'Content-Type: application/json'
 ```
 
-Then repeat the original tool call with:
-
-```json
-"context": {
-  "userId": "user-123",
-  "approvalId": "APPROVAL_ID"
-}
-```
+The approval response contains both the terminal decision and the completed tool result. No
+tool name, arguments, or approval context must be resent.
 
 Approval requests expire after 15 minutes. Approved, rejected, and expired decisions are terminal.
 
@@ -315,14 +306,14 @@ An agent response contains:
 - `actions` — reserved list of agent actions;
 - `metadata` — selected agent type and supervisor routing information.
 
-The current specialist implementations return an empty `actions` list because tools are not automatically invoked.
+When a rule selects a tool, `actions` contains the uniquely identified tool request and its status.
 
 ## 10. Adding an agent
 
 To extend the system:
 
 1. Add an `AgentType` when a new routing category is required.
-2. Implement `Agent` or extend `BankingAgents.BankingAgent`.
+2. Implement `Agent` or extend `AbstractBankingAgent`.
 3. Define a stable agent ID, safety prompt, and allowed-tool set.
 4. Register the agent in `ApplicationConfiguration`.
 5. Extend `RuleBasedIntentClassifier` or replace it with another `IntentClassifier`.
@@ -334,10 +325,9 @@ New agents must not bypass `ToolExecutionService` or `ApprovalService` for sensi
 
 ## 11. Current limitations
 
-- Retrieval is in-memory and is enabled automatically only for the loan and knowledge specialists,
-  or when an agent request explicitly sets `useRag=true`.
-- Agents execute only an explicitly requested `context.toolName`; autonomous multi-step planning is
-  outside the current scope.
+- Retrieval is in-memory and enabled for every specialist.
+- Tool selection is deterministic and rule-based; autonomous multi-step planning is outside the
+  current scope.
 - Intent classification is deterministic keyword matching rather than model-based classification.
 - Agent action history covers requested tool operations; ordinary advisory responses have no actions.
 - Registry and approval state are in-memory and not shared across replicas.
