@@ -143,9 +143,17 @@ public abstract class AbstractBankingAgent implements Agent {
 
   private ChatRequest withToolResult(ChatRequest prompt, ToolResult result) {
     List<ChatMessage> messages = new ArrayList<>(prompt.messages());
-    messages.add(
+    ChatMessage confirmedResult =
         new ChatMessage(
-            ChatRole.TOOL, result.output().toString(), Map.of("tool", result.toolName())));
+            ChatRole.SYSTEM,
+            "Confirmed tool result:\nTool: %s\nStatus: %s\nOutput: %s"
+                .formatted(result.toolName(), result.status(), result.output()),
+            Map.of("source", "application-tool", "tool", result.toolName()));
+    int userMessageIndex = messages.size();
+    if (!messages.isEmpty() && messages.getLast().role() == ChatRole.USER) {
+      userMessageIndex--;
+    }
+    messages.add(userMessageIndex, confirmedResult);
     return new ChatRequest(
         prompt.conversationId(), prompt.model(), messages, prompt.options(), prompt.metadata());
   }

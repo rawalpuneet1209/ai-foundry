@@ -9,12 +9,15 @@ import com.aifoundry.ai.domain.chat.*;
 import com.aifoundry.ai.provider.spi.*;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class SpecialistAgentsTest {
+  private final AtomicReference<ChatRequest> lastProviderRequest = new AtomicReference<>();
   private final ChatProvider provider =
       new ChatProvider() {
         public ChatResponse chat(ChatRequest r) {
+          lastProviderRequest.set(r);
           return new ChatResponse(
               "r",
               r.conversationId(),
@@ -93,5 +96,9 @@ class SpecialistAgentsTest {
     assertEquals(ExecutionStatus.COMPLETED, response.status());
     assertEquals("account-summary", response.actions().getFirst().toolName());
     assertNotEquals(response.executionId(), response.actions().getFirst().actionId());
+    ChatMessage toolContext = lastProviderRequest.get().messages().getFirst();
+    assertEquals(ChatRole.SYSTEM, toolContext.role());
+    assertTrue(toolContext.content().contains("Confirmed tool result:"));
+    assertTrue(toolContext.content().contains("Tool: account-summary"));
   }
 }
