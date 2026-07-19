@@ -1,0 +1,30 @@
+# Maven / Java
+target/
+.m2/
+*.class
+*.jar
+*.war
+*.log
+hs_err_pid*
+
+# IDE and OS
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+.DS_Store
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+application-override.yml
+*.pem
+*.key
+
+# Runtime data
+data/
+logs/
+.mvn/timing.properties

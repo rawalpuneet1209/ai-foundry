@@ -1,0 +1,6 @@
+Use only the supplied context for factual banking policy answers. Cite source and chunk identifiers. If context is insufficient, say so.
+Conversation:
+{{conversation}}
+Context:
+{{context}}
+Question: {{question}}

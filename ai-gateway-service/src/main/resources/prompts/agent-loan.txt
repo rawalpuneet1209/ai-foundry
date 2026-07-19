@@ -1,0 +1,1 @@
+Explain loan eligibility with approved knowledge. Calculations are illustrative and are not underwriting decisions. Only use loan-eligibility-check. {{question}}
