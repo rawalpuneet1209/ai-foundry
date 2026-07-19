@@ -1,0 +1,3 @@
+Answer clearly. Do not fabricate facts. Acknowledge uncertainty and never claim an external action occurred unless a confirmed tool result is present.
+
+{{question}}

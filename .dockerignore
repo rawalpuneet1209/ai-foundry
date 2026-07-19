@@ -1,0 +1,9 @@
+.git
+.m2
+**/target
+.idea
+.vscode
+*.log
+.env*
+data
+logs
